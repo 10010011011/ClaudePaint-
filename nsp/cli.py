@@ -6,6 +6,7 @@ from .overlay import make_overlay
 from .edges import edge_blend
 from .critic import grid_critic, critic_overlay, write_crops
 from .groups import coarsen
+from .texture import texture, load_director, DEFAULTS
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nsp")
@@ -24,7 +25,39 @@ def main(argv=None):
     k.add_argument("--use", default="blended.png", help="which output to judge (blended.png or flat.png)")
     g = sub.add_parser("groups", help="coarsen fine regions to ~K director groups + numbered overlay")
     g.add_argument("job"); g.add_argument("--k", type=int, default=60)
+    t = sub.add_parser("texture", help="step 4: director-driven stroke texture -> textured.png")
+    t.add_argument("job"); t.add_argument("--src", required=True, help="original source image (flow comes from it)")
+    t.add_argument("--director", default=None, help="director JSON (default: job/director.json if present)")
+    t.add_argument("--seed", type=int, default=0)
+    t.add_argument("--use", default="blended.png", help="base render (blended.png or flat.png)")
+    tp = sub.add_parser("template", help="write job/director.json skeleton listing the groups")
+    tp.add_argument("job")
     a = p.parse_args(argv)
+    if a.cmd == "template":
+        groups = json.load(open(f"{a.job}/groups.json"))
+        doc = {"_help": "edit 'groups'; fields: size jitter alpha length density direction skip. see nsp/texture.py",
+               "defaults": {}, "groups": {},
+               "_groups": [dict(id=g["id"], area_frac=g["area_frac"], mean_hex=g["mean_hex"]) for g in groups]}
+        for g in groups:   # big near-white block = background: leave it clean
+            h = g["mean_hex"]
+            if g["area_frac"] > 0.05 and min(int(h[1:3], 16), int(h[3:5], 16), int(h[5:7], 16)) > 0xf0:
+                doc["groups"][str(g["id"])] = {"skip": True}
+        json.dump(doc, open(f"{a.job}/director.json", "w"), indent=1)
+        print(json.dumps(dict(groups=len(groups), prefilled_skips=len(doc["groups"]))))
+        return
+    if a.cmd == "texture":
+        import os
+        base = np.array(Image.open(f"{a.job}/{a.use}").convert("RGB"))
+        src = np.array(Image.open(a.src).convert("RGB"))
+        if src.shape != base.shape:
+            src = np.array(Image.fromarray(src).resize((base.shape[1], base.shape[0]), Image.LANCZOS))
+        gl = np.load(f"{a.job}/groups.npy")
+        dpath = a.director or (f"{a.job}/director.json" if os.path.exists(f"{a.job}/director.json") else None)
+        params = load_director(dpath, range(1, int(gl.max()) + 1))
+        out, info = texture(base, src, gl, params, seed=a.seed)
+        Image.fromarray(out).save(f"{a.job}/textured.png")
+        print(json.dumps(dict(strokes=info["strokes"], groups_textured=len(info["per_group"]), director=dpath)))
+        return
     if a.cmd == "groups":
         flat = np.array(Image.open(f"{a.job}/flat.png").convert("RGB"))
         labels = np.load(f"{a.job}/labels.npy")
