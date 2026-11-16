@@ -4,6 +4,7 @@ from PIL import Image
 from .flatten import flatten
 from .overlay import make_overlay
 from .edges import edge_blend
+from .critic import grid_critic, critic_overlay, write_crops
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nsp")
@@ -16,7 +17,23 @@ def main(argv=None):
     b = sub.add_parser("blend", help="step 2: smudge soft edges in a flatten job folder")
     b.add_argument("job"); b.add_argument("--width", type=int, default=2)
     b.add_argument("--sigma", type=float, default=1.2)
+    k = sub.add_parser("critic", help="step 3: grid critic on a blended job; crops of flagged cells")
+    k.add_argument("job"); k.add_argument("--src", required=True, help="original source image")
+    k.add_argument("--cell", type=int, default=64)
+    k.add_argument("--use", default="blended.png", help="which output to judge (blended.png or flat.png)")
     a = p.parse_args(argv)
+    if a.cmd == "critic":
+        src = np.array(Image.open(a.src).convert("RGB"))
+        out = np.array(Image.open(f"{a.job}/{a.use}").convert("RGB"))
+        labels = np.load(f"{a.job}/labels.npy")
+        if src.shape != out.shape:
+            src = np.array(Image.fromarray(src).resize((out.shape[1], out.shape[0]), Image.LANCZOS))
+        rep = grid_critic(src, out, labels, cell=a.cell)
+        json.dump(rep, open(f"{a.job}/critic.json", "w"), indent=1)
+        Image.fromarray(critic_overlay(out, rep)).save(f"{a.job}/critic_overlay.png")
+        write_crops(src, out, rep, f"{a.job}/crops")
+        print(json.dumps(dict(grid=rep["grid"], flagged=len(rep["flagged"]), ids=rep["flagged"][:20])))
+        return
     if a.cmd == "blend":
         flat = np.array(Image.open(f"{a.job}/flat.png").convert("RGB"))
         labels = np.load(f"{a.job}/labels.npy")
