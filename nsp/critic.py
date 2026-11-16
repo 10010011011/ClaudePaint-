@@ -9,7 +9,7 @@ Metrics per cell (all in Lab / per-pixel units):
   residual   rms of output high-pass (L)        -> leftover diffusion noise in flat areas
   missing    frac of strong source edges where the output gradient collapsed -> edge lost
   spurious   frac of output boundaries on source-flat pixels -> invented seam
-Thresholds are initial guesses, not calibrated on real images yet.
+Thresholds: fidelity calibrated on 2 real images, the rest still guesses.
 """
 import json
 import numpy as np
@@ -17,7 +17,9 @@ from scipy import ndimage as ndi
 from PIL import Image, ImageDraw
 from .flatten import rgb_to_lab
 
-DEFAULT_THR = dict(fidelity=2.5, residual=0.8, missing=0.25, spurious=0.25)
+# fidelity 5.0: calibrated on 2 real diffusion images (2.5 flagged ~half of all cells; flatten itself
+# changes real art by ~2 dE). residual 0.8 never fired on them (their noise is ~0.4 dE).
+DEFAULT_THR = dict(fidelity=5.0, residual=0.8, missing=0.25, spurious=0.25)
 
 def _grad(L):
     gx = ndi.gaussian_filter(L, 1.0, order=(0, 1))

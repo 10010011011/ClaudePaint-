@@ -5,6 +5,7 @@ from .flatten import flatten
 from .overlay import make_overlay
 from .edges import edge_blend
 from .critic import grid_critic, critic_overlay, write_crops
+from .groups import coarsen
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nsp")
@@ -21,7 +22,18 @@ def main(argv=None):
     k.add_argument("job"); k.add_argument("--src", required=True, help="original source image")
     k.add_argument("--cell", type=int, default=64)
     k.add_argument("--use", default="blended.png", help="which output to judge (blended.png or flat.png)")
+    g = sub.add_parser("groups", help="coarsen fine regions to ~K director groups + numbered overlay")
+    g.add_argument("job"); g.add_argument("--k", type=int, default=60)
     a = p.parse_args(argv)
+    if a.cmd == "groups":
+        flat = np.array(Image.open(f"{a.job}/flat.png").convert("RGB"))
+        labels = np.load(f"{a.job}/labels.npy")
+        gl, f2g, groups = coarsen(labels, flat, K=a.k)
+        np.save(f"{a.job}/groups.npy", gl); np.save(f"{a.job}/fine_to_group.npy", f2g)
+        Image.fromarray(make_overlay(flat, gl, groups, max_labels=a.k, min_frac=0.0)).save(f"{a.job}/groups_overlay.png")
+        json.dump(groups, open(f"{a.job}/groups.json", "w"))
+        print(json.dumps(dict(groups=len(groups), smallest_frac=min(x["area_frac"] for x in groups))))
+        return
     if a.cmd == "critic":
         src = np.array(Image.open(a.src).convert("RGB"))
         out = np.array(Image.open(f"{a.job}/{a.use}").convert("RGB"))
