@@ -4,7 +4,8 @@ Deterministic painting tools. The LLM only directs: it reads numbered region map
 
 ## Status
 - Step 1 (done): perceptual flatten + numbered region map
-- Planned: 2 edge blend (lost/found edges by dE), 3 grid critic, 4 stroke texture, 5 pixel mode, 6 skill + MCP wrapper
+- Step 2 (done): lost-and-found edge blend
+- Planned: 3 grid critic, 4 stroke texture, 5 pixel mode, 6 skill + MCP wrapper
 
 ## Step 1: flatten
     pip install -e . pytest
@@ -15,6 +16,16 @@ Outputs in `job/`: `flat.png`, `labels.npy`, `overlay.png` (numbered regions, `~
 - Merges superpixels while a Lab plane still fits within `--tol` RMS dE. Flat areas become uniform, smooth gradients become one fitted region (no banding), real edges stay split.
 - Boundary guard: no merge across a visible edge (`edge_tol` = 1.5 x tol). Superpixel borders are snapped to real edges before merging.
 - `tol` must exceed the image's noise RMS, or almost nothing merges. Automatic noise estimation is the next item.
+
+## Step 2: edge blend
+    python -m nsp.cli blend job --width 2 --sigma 1.2
+
+Writes `job/blended.png` and prints counts of soft and hard boundary pixels.
+
+- Boundaries with dE below 3 are smudged with a narrow Lab Gaussian band. Above 6 they stay crisp. In between, the blend fades linearly.
+- Each boundary pixel takes the strongest-contrast neighbour, so a pixel touching any hard edge stays crisp.
+- Synthetic test: soft edge max jump 3.16 -> 0.79; hard edge 9.65 unchanged.
+- Flatten already merges soft boundaries it can, so on simple images this step changes little. It matters where soft boundaries survive.
 
 ## Tests
     python -m pytest -q -s tests

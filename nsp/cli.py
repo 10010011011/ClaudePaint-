@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 from .flatten import flatten
 from .overlay import make_overlay
+from .edges import edge_blend
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="nsp")
@@ -12,7 +13,17 @@ def main(argv=None):
     f.add_argument("--tol", type=float, default=2.0, help="RMS dE tolerance of plane fit (JND ~2.3)")
     f.add_argument("--segments", type=int, default=2500)
     f.add_argument("--max-side", type=int, default=0, help="downscale longest side first (0=off)")
+    b = sub.add_parser("blend", help="step 2: smudge soft edges in a flatten job folder")
+    b.add_argument("job"); b.add_argument("--width", type=int, default=2)
+    b.add_argument("--sigma", type=float, default=1.2)
     a = p.parse_args(argv)
+    if a.cmd == "blend":
+        flat = np.array(Image.open(f"{a.job}/flat.png").convert("RGB"))
+        labels = np.load(f"{a.job}/labels.npy")
+        out, st = edge_blend(flat, labels, width=a.width, sigma=a.sigma)
+        Image.fromarray(out).save(f"{a.job}/blended.png")
+        print(json.dumps(st))
+        return
     img = Image.open(a.image).convert("RGB")
     if a.max_side and max(img.size) > a.max_side:
         s = a.max_side / max(img.size)
